@@ -1,6 +1,25 @@
 console.log("Extension is running");
 
-async function openCust0Link() {
+const ORDER_STORAGE_KEY = 'lastOrderNumber';
+let extensionEnabled = true;
+
+chrome.storage.local.get(['extensionEnabled'], (result) => {
+    if (typeof result.extensionEnabled === 'boolean') {
+        extensionEnabled = result.extensionEnabled;
+    }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.extensionEnabled) {
+        extensionEnabled = changes.extensionEnabled.newValue;
+    }
+});
+
+function openCust0Link() {
+    if (!extensionEnabled) {
+        return;
+    }
+
     const currentURL = new URL(window.location.href);
 
     if (currentURL.searchParams.get("openedByExtension")) return;
@@ -21,15 +40,21 @@ async function openCust0Link() {
 
     if (warningPencilIcon && !successPencilIcon) {
         const iOrd1Element = document.querySelector("#iOrd1");
-        const iOrd1Text = iOrd1Element.textContent;
-        await navigator.clipboard.writeText(iOrd1Text);
+        const iOrd1Text = iOrd1Element ? iOrd1Element.textContent.trim() : "";
+
+        if (!iOrd1Text) {
+            return;
+        }
+
         const newURL = `https://www.hattorihanzoshears.com/cgi-bin/AccountInfo.cfm?iOrder=${iOrd1Text}`;
 
-        chrome.storage.local.get("lastOpenedURL", (data) => {
-            if (data.lastOpenedURL !== newURL) {
-                chrome.runtime.sendMessage({ url: newURL, iOrd1Id: iOrd1Text });
-                chrome.storage.local.set({ lastOpenedURL: newURL });
-            }
+        chrome.storage.local.set({ [ORDER_STORAGE_KEY]: iOrd1Text }, () => {
+            chrome.storage.local.get("lastOpenedURL", (data) => {
+                if (data.lastOpenedURL !== newURL) {
+                    chrome.runtime.sendMessage({ action: "processOrder", orderID: iOrd1Text, url: newURL });
+                    chrome.storage.local.set({ lastOpenedURL: newURL });
+                }
+            });
         });
     }
 }
@@ -67,8 +92,13 @@ function handleModalShowEvent() {
     const txtEmailSubject = document.querySelector("#txtEmailSubject");
 
     if (rrqText && txtEmailSubject) {
-        navigator.clipboard.readText().then((clipboardData) => {
-            const orderNumber = clipboardData;
+        chrome.storage.local.get([ORDER_STORAGE_KEY], (data) => {
+            const orderNumber = data[ORDER_STORAGE_KEY];
+
+            if (!orderNumber) {
+                return;
+            }
+
             rrqText.value = `Order ${orderNumber} needs a signature on file in order to ship`;
             txtEmailSubject.value = `Order ${orderNumber}`;
         });

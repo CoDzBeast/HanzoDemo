@@ -1,5 +1,6 @@
 let tabOpenedRecently = false;
-let newTabId = null;
+let unlockTimer = null;
+const managedTabs = new Set();
 let extensionEnabled = true; // Default state
 
 // Get extensionEnabled state from storage
@@ -9,6 +10,62 @@ chrome.storage.local.get(['extensionEnabled'], function(result) {
     }
 });
 
+function lockTabCreation() {
+    tabOpenedRecently = true;
+    if (unlockTimer) {
+        clearTimeout(unlockTimer);
+    }
+
+    unlockTimer = setTimeout(() => {
+        tabOpenedRecently = false;
+        unlockTimer = null;
+    }, 15000);
+}
+
+function releaseTabCreationLock() {
+    tabOpenedRecently = false;
+    if (unlockTimer) {
+        clearTimeout(unlockTimer);
+        unlockTimer = null;
+    }
+}
+
+function openAccountTab(orderID, injectedFunction) {
+    const accountPageUrl = `https://www.hattorihanzoshears.com/cgi-bin/AccountInfo.cfm?iOrder=${orderID}`;
+
+    lockTabCreation();
+
+    chrome.tabs.create({ url: accountPageUrl, active: true }, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
+            console.error(`Failed to open account page for order ${orderID}:`, chrome.runtime.lastError);
+            releaseTabCreationLock();
+            return;
+        }
+
+        managedTabs.add(tab.id);
+
+        const listener = (tabId, changeInfo) => {
+            if (tabId === tab.id && changeInfo.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(listener);
+
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: injectedFunction,
+                    args: [orderID]
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error(`Failed to run automation for order ${orderID}:`, chrome.runtime.lastError);
+                    }
+                    managedTabs.delete(tab.id);
+                    releaseTabCreationLock();
+                });
+            }
+        };
+
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+}
+
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "toggleExtension") {
@@ -16,27 +73,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.set({ 'extensionEnabled': extensionEnabled });
     }
 
-    if (extensionEnabled && request.action === "processOrder" && !tabOpenedRecently) {
-        const accountPageUrl = `https://www.hattorihanzoshears.com/cgi-bin/AccountInfo.cfm?iOrder=${request.orderID}`;
-        
-        tabOpenedRecently = true;
-        chrome.tabs.create({ url: accountPageUrl, active: true }, (tab) => {
-            newTabId = tab.id;
+    if (!extensionEnabled) {
+        return;
+    }
 
-            // Wait for the account page to load
-            chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-                if (tabId === tab.id && changeInfo.status === "complete") {
-                    // Inject a script to handle opening the return label
-                    chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: openReturnLabel,
-                        args: [request.orderID]
-                    });
+    if (request.action === "processOrder" && !tabOpenedRecently && request.orderID) {
+        openAccountTab(request.orderID, openReturnLabel);
+    }
 
-                    chrome.tabs.onUpdated.removeListener(listener);
-                }
-            });
-        });
+    if (request.action === "inspectDemoOrder" && request.orderID) {
+        openAccountTab(request.orderID, inspectDemoOrder);
     }
 });
 
@@ -61,9 +107,26 @@ function openReturnLabel(orderID) {
     }
 }
 
+function inspectDemoOrder(orderID) {
+    const dateElement = document.querySelector('#dOrd1');
+    if (dateElement) {
+        const primaryOrderDate = dateElement.textContent.trim();
+        console.log(`[Demo Automation] Order #${orderID} primary order date: ${primaryOrderDate}`);
+    } else {
+        console.warn(`[Demo Automation] Could not find primary order date for Order #${orderID}.`);
+    }
+
+    const rows = document.querySelectorAll('div.row');
+    console.log(`[Demo Automation] Inspecting ${rows.length} rows for Order #${orderID}.`);
+    rows.forEach((row, index) => {
+        console.log(`[Demo Automation] Row ${index + 1}:`, row.outerHTML);
+    });
+}
+
 // Reset tabOpenedRecently after the tab is closed
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    if (tabId === newTabId) {
-        tabOpenedRecently = false;
+    if (managedTabs.has(tabId)) {
+        managedTabs.delete(tabId);
+        releaseTabCreationLock();
     }
 });

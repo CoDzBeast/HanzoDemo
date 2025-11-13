@@ -5,8 +5,6 @@
   "manifest_version": 3,
   "permissions": [
     "activeTab",
-    "clipboardRead",
-    "clipboardWrite",
     "storage",
     "tabs",
     "scripting"
@@ -25,7 +23,7 @@
       "matches": [
         "https://www.hattorihanzoshears.com/*"
       ],
-      "js": ["jquery.min.js", "chosen.jquery.min.js", "contentScript.js", "demos.js"]
+      "js": ["jquery.min.js", "chosen.jquery.min.js", "content.js", "contentScript.js", "demos.js"]
     }
   ],
   "content_security_policy": {
