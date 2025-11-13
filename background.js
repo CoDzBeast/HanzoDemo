@@ -97,23 +97,75 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // This function will be injected into the new tab to open the return label
-function openReturnLabel(orderID) {
-    // Simulate the click to open the return label based on the injected order ID
-    const returnLabelLink = document.querySelector('a[onclick*="viewReturnLabel"]');
+async function openReturnLabel(orderID) {
+    function waitForCondition(conditionFn, { timeout = 20000, interval = 250 } = {}) {
+        const startTime = Date.now();
 
-    if (returnLabelLink) {
-        returnLabelLink.click();
+        return new Promise((resolve, reject) => {
+            const checkCondition = () => {
+                try {
+                    const result = conditionFn();
+                    if (result) {
+                        resolve(result);
+                        return;
+                    }
+                } catch (error) {
+                    reject(error);
+                    return;
+                }
 
-        setTimeout(() => {
-            const labelURL = returnLabelLink.href;
-            if (labelURL && labelURL !== "javascript:") {
-                window.open(labelURL, '_blank');
-            } else {
-                console.error("Return label URL not found.");
+                if (Date.now() - startTime >= timeout) {
+                    reject(new Error('Timed out waiting for condition.'));
+                    return;
+                }
+
+                setTimeout(checkCondition, interval);
+            };
+
+            checkCondition();
+        });
+    }
+
+    function findDemoLabelLink() {
+        const rows = Array.from(document.querySelectorAll('#TItems tr'));
+
+        for (const row of rows) {
+            const rowText = row.textContent || '';
+            if (!rowText.toLowerCase().includes('demo')) {
+                continue;
             }
-        }, 1000);  // Adjust timing as necessary
-    } else {
-        console.error(`No 'View Return Label' link found for order ID ${orderID}`);
+
+            const matchingAnchor = Array.from(row.querySelectorAll('a')).find((anchor) => {
+                return (anchor.textContent || '').trim().toLowerCase() === 'view demo label';
+            });
+
+            if (matchingAnchor) {
+                return matchingAnchor;
+            }
+        }
+
+        const anchors = Array.from(document.querySelectorAll('a'));
+        return anchors.find((anchor) => (anchor.textContent || '').trim().toLowerCase() === 'view demo label') || null;
+    }
+
+    try {
+        if (document.readyState !== 'complete') {
+            await waitForCondition(() => document.readyState === 'complete');
+        }
+
+        const demoLabelLink = await waitForCondition(findDemoLabelLink);
+        demoLabelLink.click();
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const labelURL = demoLabelLink.href;
+        if (labelURL && labelURL !== 'javascript:') {
+            window.open(labelURL, '_blank');
+        } else {
+            console.error(`[Demo Automation] Demo label URL not found for order ID ${orderID}.`);
+        }
+    } catch (error) {
+        console.error(`[Demo Automation] Unable to open demo label for order ID ${orderID}: ${error.message}`);
     }
 }
 
