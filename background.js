@@ -2,6 +2,7 @@ let tabOpenedRecently = false;
 let unlockTimer = null;
 const managedTabs = new Set();
 let extensionEnabled = true; // Default state
+const DEMO_LABELS_STORAGE_KEY = 'demoLabelsQueue';
 
 // Get extensionEnabled state from storage
 chrome.storage.local.get(['extensionEnabled'], function(result) {
@@ -73,6 +74,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.set({ 'extensionEnabled': extensionEnabled });
     }
 
+    if (request.action === "printDemoLabel" && request.orderID) {
+        openAccountTab(request.orderID, openReturnLabel);
+        removeQueuedDemoLabel(request.orderID);
+        if (typeof sendResponse === 'function') {
+            sendResponse({ success: true });
+        }
+        return;
+    }
+
     if (!extensionEnabled) {
         return;
     }
@@ -90,7 +100,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function openReturnLabel(orderID) {
     // Simulate the click to open the return label based on the injected order ID
     const returnLabelLink = document.querySelector('a[onclick*="viewReturnLabel"]');
-    
+
     if (returnLabelLink) {
         returnLabelLink.click();
 
@@ -105,6 +115,23 @@ function openReturnLabel(orderID) {
     } else {
         console.error(`No 'View Return Label' link found for order ID ${orderID}`);
     }
+}
+
+function removeQueuedDemoLabel(orderID) {
+    chrome.storage.local.get([DEMO_LABELS_STORAGE_KEY], (result) => {
+        const queue = Array.isArray(result[DEMO_LABELS_STORAGE_KEY]) ? result[DEMO_LABELS_STORAGE_KEY] : [];
+        const filteredQueue = queue.filter((entry) => entry.orderNumber !== orderID);
+
+        if (filteredQueue.length === queue.length) {
+            return;
+        }
+
+        chrome.storage.local.set({ [DEMO_LABELS_STORAGE_KEY]: filteredQueue }, () => {
+            if (chrome.runtime.lastError) {
+                console.error('[Demo Automation] Failed to update demo label queue:', chrome.runtime.lastError);
+            }
+        });
+    });
 }
 
 function inspectDemoOrder(orderID) {
