@@ -148,22 +148,88 @@ async function openReturnLabel(orderID) {
         return anchors.find((anchor) => (anchor.textContent || '').trim().toLowerCase() === 'view demo label') || null;
     }
 
+    function normalisePotentialUrl(value) {
+        if (!value) {
+            return null;
+        }
+
+        const trimmedValue = value.trim();
+        if (!trimmedValue) {
+            return null;
+        }
+
+        const javascriptMatch = trimmedValue.match(/^javascript:\s*(.*)$/i);
+        const workingValue = javascriptMatch ? javascriptMatch[1] : trimmedValue;
+
+        const potentialValues = [];
+        const quotedValueRegex = /['"]([^'"]+)['"]/g;
+        let match;
+        while ((match = quotedValueRegex.exec(workingValue)) !== null) {
+            potentialValues.push(match[1]);
+        }
+
+        potentialValues.push(workingValue);
+
+        for (const potentialValue of potentialValues) {
+            const candidate = potentialValue.trim();
+            if (!candidate || /^javascript:/i.test(candidate)) {
+                continue;
+            }
+
+            try {
+                return new URL(candidate, window.location.origin).href;
+            } catch (error) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    function extractUrlFromAnchor(anchor) {
+        if (!anchor) {
+            return null;
+        }
+
+        const dataAttributeCandidates = ['data-url', 'data-href', 'data-target', 'data-label-url'];
+        for (const attribute of dataAttributeCandidates) {
+            const value = anchor.getAttribute(attribute);
+            const normalised = normalisePotentialUrl(value);
+            if (normalised) {
+                return normalised;
+            }
+        }
+
+        const hrefValue = anchor.getAttribute('href');
+        const normalisedHref = normalisePotentialUrl(hrefValue);
+        if (normalisedHref) {
+            return normalisedHref;
+        }
+
+        const onclickValue = anchor.getAttribute('onclick');
+        const normalisedOnclick = normalisePotentialUrl(onclickValue);
+        if (normalisedOnclick) {
+            return normalisedOnclick;
+        }
+
+        return null;
+    }
+
     try {
         if (document.readyState !== 'complete') {
             await waitForCondition(() => document.readyState === 'complete');
         }
 
         const demoLabelLink = await waitForCondition(findDemoLabelLink);
-        demoLabelLink.click();
+        const labelURL = extractUrlFromAnchor(demoLabelLink);
 
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const labelURL = demoLabelLink.href;
-        if (labelURL && labelURL !== 'javascript:') {
-            window.open(labelURL, '_blank');
-        } else {
-            console.error(`[Demo Automation] Demo label URL not found for order ID ${orderID}.`);
+        if (labelURL) {
+            window.open(labelURL, '_blank', 'noopener');
+            return;
         }
+
+        demoLabelLink.click();
+        console.warn(`[Demo Automation] Falling back to clicking the demo label link for order ID ${orderID}.`);
     } catch (error) {
         console.error(`[Demo Automation] Unable to open demo label for order ID ${orderID}: ${error.message}`);
     }
