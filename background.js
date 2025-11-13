@@ -252,20 +252,133 @@ function removeQueuedDemoLabel(orderID) {
     });
 }
 
-function inspectDemoOrder(orderID) {
-    const dateElement = document.querySelector('#dOrd1');
-    if (dateElement) {
-        const primaryOrderDate = dateElement.textContent.trim();
-        console.log(`[Demo Automation] Order #${orderID} primary order date: ${primaryOrderDate}`);
-    } else {
-        console.warn(`[Demo Automation] Could not find primary order date for Order #${orderID}.`);
+async function inspectDemoOrder(orderID) {
+    function waitForCondition(conditionFn, { timeout = 20000, interval = 250 } = {}) {
+        const startTime = Date.now();
+
+        return new Promise((resolve, reject) => {
+            const checkCondition = () => {
+                try {
+                    const result = conditionFn();
+                    if (result) {
+                        resolve(result);
+                        return;
+                    }
+                } catch (error) {
+                    reject(error);
+                    return;
+                }
+
+                if (Date.now() - startTime >= timeout) {
+                    reject(new Error('Timed out waiting for condition.'));
+                    return;
+                }
+
+                setTimeout(checkCondition, interval);
+            };
+
+            checkCondition();
+        });
     }
 
-    const rows = document.querySelectorAll('div.row');
-    console.log(`[Demo Automation] Inspecting ${rows.length} rows for Order #${orderID}.`);
-    rows.forEach((row, index) => {
-        console.log(`[Demo Automation] Row ${index + 1}:`, row.outerHTML);
-    });
+    function normaliseOrderNumber(rawValue) {
+        if (!rawValue) {
+            return null;
+        }
+
+        const trimmed = rawValue.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        const digitsOnly = trimmed.replace(/\D+/g, '');
+        return digitsOnly || null;
+    }
+
+    function findDemoOrderAnchor() {
+        const anchors = Array.from(document.querySelectorAll('td a[href]'));
+
+        return anchors.find((anchor) => {
+            const href = anchor.getAttribute('href') || '';
+            const text = anchor.textContent || '';
+            const normalisedText = normaliseOrderNumber(text);
+
+            if (normalisedText) {
+                return /my_inventory\.cfm/i.test(href) || /\biorder=\d+/i.test(href);
+            }
+
+            const hrefMatch = href.match(/\biorder=(\d+)/i);
+            return Boolean(hrefMatch);
+        }) || null;
+    }
+
+    function extractOrderNumberFromAnchor(anchor) {
+        if (!anchor) {
+            return null;
+        }
+
+        const textNumber = normaliseOrderNumber(anchor.textContent || '');
+        if (textNumber) {
+            return textNumber;
+        }
+
+        const href = anchor.getAttribute('href') || '';
+        const match = href.match(/\biorder=(\d+)/i);
+        return match ? match[1] : null;
+    }
+
+    function findCorrespondingRow(orderNumber) {
+        if (!orderNumber) {
+            return null;
+        }
+
+        const attributeSelector = `div.row.rwOrdr[onclick*="GetOrder(${orderNumber}"]`;
+        const directMatch = document.querySelector(attributeSelector);
+        if (directMatch) {
+            return directMatch;
+        }
+
+        const fallbackMatch = Array.from(document.querySelectorAll('div.row.rwOrdr')).find((row) => {
+            const rowText = row.textContent || '';
+            return rowText.includes(`#${orderNumber}`);
+        });
+
+        return fallbackMatch || null;
+    }
+
+    try {
+        if (document.readyState !== 'complete') {
+            await waitForCondition(() => document.readyState === 'complete');
+        }
+
+        const demoOrderAnchor = await waitForCondition(findDemoOrderAnchor);
+        const demoOrderNumber = extractOrderNumberFromAnchor(demoOrderAnchor);
+
+        if (!demoOrderNumber) {
+            console.warn(`[Demo Automation] Unable to determine demo order number for Order #${orderID}.`);
+            return;
+        }
+
+        console.log(`[Demo Automation] Found demo order number ${demoOrderNumber} for Order #${orderID}.`);
+
+        const targetRow = await waitForCondition(() => findCorrespondingRow(demoOrderNumber), { timeout: 15000 });
+
+        if (!targetRow) {
+            console.warn(`[Demo Automation] Unable to locate row for demo order #${demoOrderNumber}.`);
+            return;
+        }
+
+        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        if (typeof targetRow.click === 'function') {
+            targetRow.click();
+            console.log(`[Demo Automation] Clicked row for demo order #${demoOrderNumber}.`);
+        } else {
+            console.warn(`[Demo Automation] Located row for demo order #${demoOrderNumber} but could not trigger click.`);
+        }
+    } catch (error) {
+        console.error(`[Demo Automation] Failed to inspect demo order for Order #${orderID}: ${error.message}`);
+    }
 }
 
 // Reset tabOpenedRecently after the tab is closed
