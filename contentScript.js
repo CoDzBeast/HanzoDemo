@@ -2,9 +2,95 @@ const DEMO_ORDER_STORAGE_KEY = 'demoOrderNumber';
 let demoOrderCaptured = false;
 let workflowStarted = false;
 let userClickedOrderRow = false;
+let windowOpenIntercepted = false;
+let viewDemoLabelIntercepted = false;
 
 function sleep(ms) {
     return new Promise((res) => setTimeout(res, ms));
+}
+
+function handleWindowOpenMessage(event) {
+    if (event.source !== window) {
+        return;
+    }
+
+    const data = event.data || {};
+    if (!data.__hanzoDemoLabelIntercept || !data.url) {
+        return;
+    }
+
+    chrome.runtime.sendMessage({
+        type: 'demoLabelURL',
+        pdfUrl: data.url,
+    });
+}
+
+function interceptWindowOpen() {
+    if (windowOpenIntercepted) {
+        return;
+    }
+
+    console.log('🔧 Installing window.open interceptor (content script)…');
+    windowOpenIntercepted = true;
+    window.addEventListener('message', handleWindowOpenMessage);
+
+    const override = `
+        (function() {
+            const originalOpen = window.open;
+            window.open = function(...args) {
+                try {
+                    const [url] = args;
+                    window.postMessage({ __hanzoDemoLabelIntercept: true, url }, '*');
+                } catch (error) {
+                    console.error('window.open interceptor error:', error);
+                }
+
+                return originalOpen.apply(this, args);
+            };
+        })();
+    `;
+
+    const script = document.createElement('script');
+    script.textContent = override;
+    document.documentElement.appendChild(script);
+    script.remove();
+}
+
+function injectViewDemoLabelInterceptor() {
+    if (viewDemoLabelIntercepted) {
+        return;
+    }
+
+    console.log('🛡️ Injecting viewDemoLabel override…');
+    viewDemoLabelIntercepted = true;
+
+    const override = `
+        (function() {
+            const oldViewDemoLabel = window.viewDemoLabel;
+            window.viewDemoLabel = function() {
+                try {
+                    const result = oldViewDemoLabel && oldViewDemoLabel();
+                    return result;
+                } catch (e) {
+                    console.error('viewDemoLabel override error:', e);
+                }
+            };
+        })();
+    `;
+
+    const script = document.createElement('script');
+    script.textContent = override;
+    document.documentElement.appendChild(script);
+    script.remove();
+}
+
+function triggerDemoLabel() {
+    console.log('🔥 Forcing viewDemoLabel() execution…');
+
+    const script = document.createElement('script');
+    script.textContent = "if (typeof viewDemoLabel === 'function') viewDemoLabel();";
+    document.documentElement.appendChild(script);
+    script.remove();
 }
 
 async function clickAndWait(selector, waitForSelector, waitTime = 500) {
@@ -48,8 +134,10 @@ async function waitForViewDemoLabel(orderId) {
             );
 
             if (labelLink) {
-                console.log("✔ View Demo Label link found — clicking…");
-                labelLink.click();
+                console.log("✔ View Demo Label link found — triggering viewDemoLabel()…");
+                injectViewDemoLabelInterceptor();
+                interceptWindowOpen();
+                triggerDemoLabel();
                 await sleep(1500);
                 return true;
             }
@@ -258,8 +346,10 @@ function waitForDemoLabelButton() {
         const btn = document.querySelector('a[onclick="viewDemoLabel();"]');
         if (btn) {
             clearInterval(int);
-            console.log('Clicking Demo Label button');
-            btn.click();
+            console.log('Triggering Demo Label via viewDemoLabel()');
+            injectViewDemoLabelInterceptor();
+            interceptWindowOpen();
+            triggerDemoLabel();
         }
     }, 300);
 }
