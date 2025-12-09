@@ -50,7 +50,7 @@ async function waitForViewDemoLabel(orderId) {
             if (labelLink) {
                 console.log("✔ View Demo Label link found — clicking…");
                 labelLink.click();
-                await sleep(500);
+                await sleep(1500);
                 return true;
             }
         }
@@ -59,6 +59,25 @@ async function waitForViewDemoLabel(orderId) {
     }
 
     console.log("❌ View Demo Label link not found for order:", orderId);
+    return false;
+}
+
+async function waitForPanelData(orderId) {
+    const panelId = `O${orderId}`;
+    console.log("⏳ Waiting for panel data to load…");
+
+    for (let i = 0; i < 50; i++) {
+        const panel = document.getElementById(panelId);
+
+        if (panel && panel.innerText.trim().length > 20) {
+            console.log("✔ Panel data loaded.");
+            return true;
+        }
+
+        await sleep(200);
+    }
+
+    console.log("❌ Panel data never loaded.");
     return false;
 }
 
@@ -163,6 +182,8 @@ async function clickDemoPanel(demoOrder) {
             console.log('✔ Panel row found, clicking…');
             panelRow.click();
             await sleep(1200); // allow AJAX panel to load
+            await waitForPanelData(demoOrder);
+            await sleep(2500);
             await waitForViewDemoLabel(demoOrder);
             await sleep(800);
             return true;
