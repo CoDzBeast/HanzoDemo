@@ -3,11 +3,17 @@ let unlockTimer = null;
 const managedTabs = new Set();
 let extensionEnabled = true; // Default state
 const DEMO_LABELS_STORAGE_KEY = 'demoLabelsQueue';
+const DEMO_ORDER_STORAGE_KEY = 'demoOrderNumber';
+let demoOrderNumber = null;
 
 // Get extensionEnabled state from storage
-chrome.storage.local.get(['extensionEnabled'], function(result) {
+chrome.storage.local.get(['extensionEnabled', DEMO_ORDER_STORAGE_KEY], function(result) {
     if (result.extensionEnabled !== undefined) {
         extensionEnabled = result.extensionEnabled;
+    }
+
+    if (result[DEMO_ORDER_STORAGE_KEY]) {
+        demoOrderNumber = result[DEMO_ORDER_STORAGE_KEY];
     }
 });
 
@@ -69,6 +75,22 @@ function openAccountTab(orderID, injectedFunction) {
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'storeDemoOrderNumber' && request.orderNumber) {
+        demoOrderNumber = request.orderNumber;
+        chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: demoOrderNumber });
+        if (typeof sendResponse === 'function') {
+            sendResponse({ success: true });
+        }
+        return;
+    }
+
+    if (request.action === 'getDemoOrderNumber') {
+        if (typeof sendResponse === 'function') {
+            sendResponse({ orderNumber: demoOrderNumber });
+        }
+        return;
+    }
+
     if (request.action === "toggleExtension") {
         extensionEnabled = request.extensionEnabled;
         chrome.storage.local.set({ 'extensionEnabled': extensionEnabled });
