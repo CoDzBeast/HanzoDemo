@@ -315,7 +315,7 @@ function handleCustomerLink(link) {
     console.log('➡ Opening AccountInfo:', fullUrl);
 
     chrome.runtime.sendMessage({
-        type: 'openAccountInfo',
+        type: 'openAccountPage',
         url: fullUrl,
     });
 }

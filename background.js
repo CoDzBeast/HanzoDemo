@@ -109,6 +109,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
     }
 
+    if (request.type === 'openAccountPage' && request.url && sender?.tab?.id) {
+        chrome.tabs.update(sender.tab.id, { url: request.url });
+        return;
+    }
+
     if (request.type === 'getDemoOrder') {
         if (typeof sendResponse === 'function') {
             sendResponse({ order: demoOrderNumber });
