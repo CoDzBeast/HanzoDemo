@@ -3,13 +3,33 @@ let demoOrderCaptured = false;
 let workflowStarted = false;
 let userClickedOrderRow = false;
 
-function getDemoTable() {
-    const headers = Array.from(document.querySelectorAll('h4'));
-    const demoHeader = headers.find((h) => h.innerText.trim().startsWith('Demo Shears'));
+async function waitForDemoTable(maxTries = 40) {
+    for (let i = 0; i < maxTries; i++) {
+        console.log('🔍 Looking for Demo Shears table… attempt', i + 1);
 
+        const table = findDemoTable();
+        if (table) {
+            console.log('✅ Demo table found!', table);
+            return table;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    console.log('❌ Demo table not found after waiting.');
+    return null;
+}
+
+function findDemoTable() {
+    const headers = Array.from(document.querySelectorAll('h4'));
+    const demoHeader = headers.find(
+        (h) =>
+            h.innerText.toLowerCase().includes('demo') &&
+            h.innerText.toLowerCase().includes('shears')
+    );
     if (!demoHeader) return null;
 
-    return demoHeader.closest('.boxed')?.querySelector('table.table');
+    return demoHeader.closest('.boxed')?.querySelector('table.table.table-striped');
 }
 
 function findOpenDemoRow(table) {
@@ -48,15 +68,9 @@ function handleDemoOrder(order) {
     console.log('Demo order saved:', order);
 }
 
-function waitForDemoOrder(attempt = 0) {
-    console.log('🔍 Looking for Demo Shears table…');
-
-    const table = getDemoTable();
+async function waitForDemoOrder(attempt = 0) {
+    const table = await waitForDemoTable();
     if (!table) {
-        if (attempt < 40) {
-            return setTimeout(() => waitForDemoOrder(attempt + 1), 250);
-        }
-        console.error('❌ Demo table not found after waiting.');
         return;
     }
 
