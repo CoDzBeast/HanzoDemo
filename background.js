@@ -7,6 +7,25 @@ const DEMO_ORDER_STORAGE_KEY = 'demoOrderNumber';
 let demoOrderNumber = null;
 let demoLabelURLs = [];
 
+chrome.webRequest.onBeforeRequest.addListener(
+    function(details) {
+        const url = details.url;
+
+        if (url.includes("shippingLabelDemo.cfm")) {
+            console.log("📥 Intercepted Demo Label URL:", url);
+
+            demoLabelURLs.push(url);
+
+            chrome.runtime.sendMessage({
+                type: "demoLabelURL",
+                pdfUrl: url
+            });
+        }
+    },
+    { urls: ["<all_urls>"] },
+    ["blocking"]
+);
+
 // Get extensionEnabled state from storage
 chrome.storage.local.get(['extensionEnabled', DEMO_ORDER_STORAGE_KEY], function(result) {
     if (result.extensionEnabled !== undefined) {
@@ -93,6 +112,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'getDemoOrder') {
         if (typeof sendResponse === 'function') {
             sendResponse({ order: demoOrderNumber });
+        }
+        return;
+    }
+
+    if (request.type === 'getDemoLabelList') {
+        if (typeof sendResponse === 'function') {
+            sendResponse({ labels: demoLabelURLs });
         }
         return;
     }
