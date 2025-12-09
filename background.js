@@ -295,21 +295,38 @@ async function inspectDemoOrder(orderID) {
         return digitsOnly || null;
     }
 
-    function findDemoOrderAnchor() {
-        const anchors = Array.from(document.querySelectorAll('td a[href]'));
+    function isAccountInfoPage() {
+        return /\/AccountInfo\.cfm/i.test(window.location.href);
+    }
 
-        return anchors.find((anchor) => {
-            const href = anchor.getAttribute('href') || '';
-            const text = anchor.textContent || '';
-            const normalisedText = normaliseOrderNumber(text);
+    function findDemoOrderRow() {
+        const table = document.querySelector('table.table.table-striped');
 
-            if (normalisedText) {
-                return /my_inventory\.cfm/i.test(href) || /\biorder=\d+/i.test(href);
+        if (!table) {
+            return null;
+        }
+
+        const rows = Array.from(table.querySelectorAll('tr'));
+
+        for (const row of rows) {
+            const demoCell = Array.from(row.querySelectorAll('td')).find((cell) => {
+                const align = (cell.getAttribute('align') || '').toLowerCase();
+                const text = (cell.textContent || '').trim();
+                return align === 'center' && text === 'O';
+            });
+
+            if (!demoCell) {
+                continue;
             }
 
-            const hrefMatch = href.match(/\biorder=(\d+)/i);
-            return Boolean(hrefMatch);
-        }) || null;
+            const orderAnchor = row.querySelector('a[href*="iorder="]');
+
+            if (orderAnchor) {
+                return { row, orderAnchor };
+            }
+        }
+
+        return null;
     }
 
     function extractOrderNumberFromAnchor(anchor) {
@@ -346,22 +363,56 @@ async function inspectDemoOrder(orderID) {
         return fallbackMatch || null;
     }
 
+    function findViewDemoLabelLink() {
+        const anchors = Array.from(document.querySelectorAll('a'));
+
+        return anchors.find((anchor) => {
+            const text = (anchor.textContent || '').trim().toLowerCase();
+            const onclick = anchor.getAttribute('onclick') || '';
+            return text === 'view demo label' || /viewdemo\s*label\s*\(\s*\)/i.test(onclick) || /viewDemoLabel\s*\(/i.test(onclick);
+        }) || null;
+    }
+
+    function simulateRowClick(rowElement) {
+        if (!rowElement) {
+            return;
+        }
+
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        rowElement.dispatchEvent(clickEvent);
+
+        if (typeof rowElement.click === 'function') {
+            rowElement.click();
+        }
+    }
+
     try {
+        if (!isAccountInfoPage()) {
+            console.warn('[Demo Automation] Not on AccountInfo.cfm page; skipping demo inspection.');
+            return;
+        }
+
         if (document.readyState !== 'complete') {
             await waitForCondition(() => document.readyState === 'complete');
         }
 
-        const demoOrderAnchor = await waitForCondition(findDemoOrderAnchor);
-        const demoOrderNumber = extractOrderNumberFromAnchor(demoOrderAnchor);
+        const demoRowResult = await waitForCondition(findDemoOrderRow);
+
+        if (!demoRowResult) {
+            console.warn('[Demo Automation] Unable to find demo order row.');
+            return;
+        }
+
+        const demoOrderNumber = extractOrderNumberFromAnchor(demoRowResult.orderAnchor);
 
         if (!demoOrderNumber) {
-            console.warn(`[Demo Automation] Unable to determine demo order number for Order #${orderID}.`);
+            console.warn('[Demo Automation] Unable to determine demo order number from demo row.');
             return;
         }
 
         console.log(`[Demo Automation] Found demo order number ${demoOrderNumber} for Order #${orderID}.`);
 
-        const targetRow = await waitForCondition(() => findCorrespondingRow(demoOrderNumber), { timeout: 15000 });
+        const targetRow = await waitForCondition(() => findCorrespondingRow(demoOrderNumber), { timeout: 20000 });
 
         if (!targetRow) {
             console.warn(`[Demo Automation] Unable to locate row for demo order #${demoOrderNumber}.`);
@@ -369,13 +420,18 @@ async function inspectDemoOrder(orderID) {
         }
 
         targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        simulateRowClick(targetRow);
+        console.log(`[Demo Automation] Triggered open for demo order #${demoOrderNumber}.`);
 
-        if (typeof targetRow.click === 'function') {
-            targetRow.click();
-            console.log(`[Demo Automation] Clicked row for demo order #${demoOrderNumber}.`);
-        } else {
-            console.warn(`[Demo Automation] Located row for demo order #${demoOrderNumber} but could not trigger click.`);
+        const viewDemoLabelLink = await waitForCondition(findViewDemoLabelLink, { timeout: 20000 });
+
+        if (!viewDemoLabelLink) {
+            console.warn(`[Demo Automation] Unable to find "View Demo Label" link for order #${demoOrderNumber}.`);
+            return;
         }
+
+        viewDemoLabelLink.click();
+        console.log(`[Demo Automation] Clicked "View Demo Label" for order #${demoOrderNumber}.`);
     } catch (error) {
         console.error(`[Demo Automation] Failed to inspect demo order for Order #${orderID}: ${error.message}`);
     }
