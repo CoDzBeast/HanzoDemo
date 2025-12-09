@@ -1,6 +1,7 @@
 const DEMO_ORDER_STORAGE_KEY = 'demoOrderNumber';
 let demoOrderCaptured = false;
 let workflowStarted = false;
+let userClickedOrderRow = false;
 
 function waitForDemoRow() {
     const table = document.querySelector('.table.table-striped');
@@ -82,63 +83,76 @@ function openDemoPanel(orderNumber) {
     console.warn('Panel for demo order NOT found:', orderNumber);
 }
 
-function startWorkflow() {
-    if (workflowStarted) {
-        return;
-    }
-
-    requestStoredDemoOrder().then((order) => {
-        if (!order) {
-            console.warn('Demo order not found in storage.');
-            return;
-        }
-
-        openDemoPanel(order);
-    });
+function isRealModal(node) {
+    return (
+        node.classList.contains('modal-content') &&
+        node.offsetParent !== null
+    );
 }
 
-function handleShippingModal(modal) {
-    console.log('Shipping modal opened — extracting AccountInfo link…');
-
-    const link = modal.querySelector('#Cust0');
-    if (!link) {
-        console.warn('No customer link found inside modal.');
+function startModalWorkflow(modal) {
+    if (!userClickedOrderRow) {
+        console.warn('Ignoring modal because no order row click was detected.');
         return;
     }
 
-    const accountUrl = link.href || link.getAttribute('href');
-    if (!accountUrl || !accountUrl.includes('AccountInfo.cfm')) {
-        console.warn('Customer link does not point to AccountInfo.');
+    console.log('🔥 REAL Shipping modal detected — workflow begins now.');
+
+    const accountLink = modal.querySelector('#Cust0');
+    if (!accountLink) {
+        console.error('❌ Could not find AccountInfo link in modal.');
         return;
     }
 
     chrome.runtime.sendMessage({
         type: 'openAccountInfo',
-        url: accountUrl,
+        url: accountLink.href,
     });
-
-    console.log('Opening AccountInfo to scrape demo order:', accountUrl);
-    startWorkflow();
-}
-
-function detectExistingModal() {
-    const modal = document.querySelector('.modal-content');
-    if (modal) {
-        handleShippingModal(modal);
-    }
 }
 
 function observeForModal() {
-    const obs = new MutationObserver((muts) => {
-        muts.forEach((m) => {
-            m.addedNodes.forEach((node) => {
-                if (node.nodeType === 1 && node.matches('.modal-content')) {
-                    handleShippingModal(node);
+    const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            for (const node of m.addedNodes) {
+                if (node.nodeType === 1) {
+                    if (node.matches('.modal-content') && isRealModal(node)) {
+                        startModalWorkflow(node);
+                        return;
+                    }
+
+                    const modal = node.querySelector('.modal-content');
+                    if (modal && isRealModal(modal)) {
+                        startModalWorkflow(modal);
+                        return;
+                    }
                 }
-            });
-        });
+            }
+
+            if (m.type === 'attributes' && m.target.matches('.modal')) {
+                const modal = m.target.querySelector('.modal-content');
+                if (modal && isRealModal(modal)) {
+                    startModalWorkflow(modal);
+                    return;
+                }
+            }
+        }
     });
-    obs.observe(document.body, { childList: true, subtree: true });
+
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+    });
+}
+
+function trackOrderRowClicks() {
+    document.addEventListener('click', (event) => {
+        const orderRow = event.target.closest('.rwOrdr, .table.table-striped tr');
+        if (orderRow) {
+            userClickedOrderRow = true;
+        }
+    }, true);
 }
 
 function init() {
@@ -149,7 +163,7 @@ function init() {
     }
 
     if (location.href.includes('Shipping.cfm')) {
-        detectExistingModal();
+        trackOrderRowClicks();
         observeForModal();
     }
 }
