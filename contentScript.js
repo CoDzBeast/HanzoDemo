@@ -3,20 +3,47 @@ let demoOrderCaptured = false;
 let workflowStarted = false;
 let userClickedOrderRow = false;
 
-async function waitForDemoTable(maxTries = 40) {
-    for (let i = 0; i < maxTries; i++) {
-        console.log('🔍 Looking for Demo Shears table… attempt', i + 1);
+function sleep(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+}
 
-        const table = findDemoTable();
-        if (table) {
-            console.log('✅ Demo table found!', table);
-            return table;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 250));
+async function clickAndWait(selector, waitForSelector, waitTime = 500) {
+    const el = document.querySelector(selector);
+    if (!el) {
+        console.log('❌ Element not found:', selector);
+        return false;
     }
 
-    console.log('❌ Demo table not found after waiting.');
+    el.click();
+    console.log(`✔ Clicked ${selector}, waiting ${waitTime}ms…`);
+
+    await sleep(waitTime);
+
+    if (waitForSelector) {
+        let tries = 0;
+        while (!document.querySelector(waitForSelector) && tries < 40) {
+            await sleep(150);
+            tries++;
+        }
+        console.log('✔ Loaded:', waitForSelector);
+    }
+
+    return true;
+}
+
+async function waitForDemoTable() {
+    console.log('🔍 Waiting for Demo Shears table...');
+
+    for (let i = 0; i < 60; i++) {
+        const table = findDemoTable();
+        if (table) {
+            console.log('✅ Demo table detected!');
+            return table;
+        }
+        await sleep(200);
+    }
+
+    console.log('❌ Demo table not detected after 12 seconds');
     return null;
 }
 
@@ -55,6 +82,42 @@ function extractDemoOrderNumber(row) {
     }
 
     return null;
+}
+
+async function runWorkflow(orderId) {
+    console.log('▶ Clicking shipping row');
+    await clickAndWait(`#row_${orderId}`, '#ShippingInfoModal', 700);
+
+    console.log('▶ Clicking Customer link');
+    await clickAndWait('#Cust0', 'body', 900);
+
+    console.log('▶ Waiting for Demo Shears section');
+    const demoTable = await waitForDemoTable();
+
+    if (!demoTable) {
+        console.log('❌ Demo table not found, stopping workflow.');
+        return;
+    }
+
+    console.log("▶ Extracting first open demo row (Status 'O')");
+    const openRow = [...demoTable.querySelectorAll('tr')].find((r) =>
+        r.innerText.includes('O')
+    );
+
+    if (!openRow) {
+        console.log('❌ No open demo found.');
+        return;
+    }
+
+    const orderLink = openRow.querySelector('a');
+    if (!orderLink) {
+        console.log('❌ No link found in row.');
+        return;
+    }
+
+    console.log('▶ Clicking demo order link');
+    orderLink.click();
+    await sleep(1000);
 }
 
 function handleDemoOrder(order) {
