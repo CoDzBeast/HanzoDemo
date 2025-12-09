@@ -5,6 +5,7 @@ let extensionEnabled = true; // Default state
 const DEMO_LABELS_STORAGE_KEY = 'demoLabelsQueue';
 const DEMO_ORDER_STORAGE_KEY = 'demoOrderNumber';
 let demoOrderNumber = null;
+let demoLabelURLs = [];
 
 // Get extensionEnabled state from storage
 chrome.storage.local.get(['extensionEnabled', DEMO_ORDER_STORAGE_KEY], function(result) {
@@ -99,6 +100,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "toggleExtension") {
         extensionEnabled = request.extensionEnabled;
         chrome.storage.local.set({ 'extensionEnabled': extensionEnabled });
+    }
+
+    if (request.type === 'demoLabelURL' && request.pdfUrl) {
+        console.log("📦 Saving Demo Label URL:", request.pdfUrl);
+        demoLabelURLs.push(request.pdfUrl);
+        return;
     }
 
     if (request.action === "printDemoLabel" && request.orderID) {
@@ -400,6 +407,27 @@ async function inspectDemoOrder(orderID) {
         }) || null;
     }
 
+    function interceptWindowOpen() {
+        console.log("🔧 Installing window.open interceptor...");
+
+        window._realOpen = window.open;
+
+        window.open = function(url, target, features) {
+            console.log("📥 Intercepted window.open URL:", url);
+
+            chrome.runtime.sendMessage({
+                type: "demoLabelURL",
+                pdfUrl: url
+            });
+
+            return window._realOpen(url, target, features);
+        };
+    }
+
+    async function clickViewDemoLabel(link) {
+        link.click();
+    }
+
     function simulateRowClick(rowElement) {
         if (!rowElement) {
             return;
@@ -457,7 +485,8 @@ async function inspectDemoOrder(orderID) {
             return;
         }
 
-        viewDemoLabelLink.click();
+        interceptWindowOpen();
+        await clickViewDemoLabel(viewDemoLabelLink);
         console.log(`[Demo Automation] Clicked "View Demo Label" for order #${demoOrderNumber}.`);
     } catch (error) {
         console.error(`[Demo Automation] Failed to inspect demo order for Order #${orderID}: ${error.message}`);
