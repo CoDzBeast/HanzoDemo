@@ -23,7 +23,9 @@
       "matches": [
         "https://www.hattorihanzoshears.com/*"
       ],
-      "js": ["jquery.min.js", "chosen.jquery.min.js", "contentScript.js", "demos.js"]
+      "js": ["jquery.min.js", "chosen.jquery.min.js", "contentScript.js", "demos.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
     }
   ],
   "content_security_policy": {
