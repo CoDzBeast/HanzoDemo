@@ -120,7 +120,29 @@ async function runWorkflow(orderId) {
     await sleep(1000);
 }
 
-function handleDemoOrder(order) {
+async function clickDemoPanel(demoOrder) {
+    console.log('🔍 Waiting for panel row for order:', demoOrder);
+
+    for (let i = 0; i < 40; i++) {
+        const panelRow = [...document.querySelectorAll('div.rwOrdr')].find((div) =>
+            div.innerText.includes(`#${demoOrder}`)
+        );
+
+        if (panelRow) {
+            console.log('✔ Panel row found, clicking…');
+            panelRow.click();
+            await sleep(800);
+            return true;
+        }
+
+        await sleep(200);
+    }
+
+    console.log('❌ Panel row not found for order:', demoOrder);
+    return false;
+}
+
+async function handleDemoOrder(order) {
     if (demoOrderCaptured) {
         return;
     }
@@ -129,6 +151,9 @@ function handleDemoOrder(order) {
     chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: order });
     demoOrderCaptured = true;
     console.log('Demo order saved:', order);
+
+    await sleep(1200);
+    await clickDemoPanel(order);
 }
 
 async function waitForDemoOrder(attempt = 0) {
@@ -152,7 +177,7 @@ async function waitForDemoOrder(attempt = 0) {
     const orderNumber = extractDemoOrderNumber(row);
     if (orderNumber) {
         console.log('🎉 DEMO ORDER FOUND:', orderNumber);
-        handleDemoOrder(orderNumber);
+        await handleDemoOrder(orderNumber);
         return;
     }
 
@@ -185,16 +210,13 @@ function waitForDemoLabelButton() {
     }, 300);
 }
 
-function openDemoPanel(orderNumber) {
-    const panels = document.querySelectorAll('.rwOrdr');
-    for (const panel of panels) {
-        if (panel.textContent.includes(`#${orderNumber}`)) {
-            workflowStarted = true;
-            console.log('Opening demo panel:', orderNumber);
-            panel.click();
-            waitForDemoLabelButton();
-            return;
-        }
+async function openDemoPanel(orderNumber) {
+    const clicked = await clickDemoPanel(orderNumber);
+
+    if (clicked) {
+        workflowStarted = true;
+        waitForDemoLabelButton();
+        return;
     }
 
     console.warn('Panel for demo order NOT found:', orderNumber);
