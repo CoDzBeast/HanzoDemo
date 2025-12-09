@@ -104,9 +104,17 @@ function startModalWorkflow(modal) {
         return;
     }
 
+    const relativeUrl = accountLink.getAttribute('href');
+    if (!relativeUrl) {
+        console.error('❌ AccountInfo link found but missing href attribute.');
+        return;
+    }
+
+    const fullUrl = new URL(relativeUrl, window.location.origin).href;
+
     chrome.runtime.sendMessage({
         type: 'openAccountInfo',
-        url: accountLink.href,
+        url: fullUrl,
     });
 }
 
