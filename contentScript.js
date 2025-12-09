@@ -3,43 +3,83 @@ let demoOrderCaptured = false;
 let workflowStarted = false;
 let userClickedOrderRow = false;
 
-function waitForDemoRow() {
-    const table = document.querySelector('.table.table-striped');
-    if (table) {
-        console.log('Demo table found — extracting demo order.');
-        extractDemoOrder(table);
-        return;
-    }
+function getDemoTable() {
+    const headers = Array.from(document.querySelectorAll('h4'));
+    const demoHeader = headers.find((h) => h.innerText.trim().startsWith('Demo Shears'));
 
-    setTimeout(waitForDemoRow, 500);
+    if (!demoHeader) return null;
+
+    return demoHeader.closest('.boxed')?.querySelector('table.table');
 }
 
-function extractDemoOrder(table) {
-    if (demoOrderCaptured) {
-        return;
+function findOpenDemoRow(table) {
+    const rows = table.querySelectorAll('tbody tr');
+
+    for (const row of rows) {
+        const statusCell = row.querySelector('td:first-child');
+        if (!statusCell) continue;
+
+        if (statusCell.innerText.trim() === 'O') {
+            return row;
+        }
     }
 
-    let order = null;
+    return null;
+}
 
-    const rows = table.querySelectorAll('tr');
-    rows.forEach((row) => {
-        if (row.innerText.includes('O')) {
-            const link = row.querySelector("a[href*='iorder=']");
-            if (link) {
-                order = link.textContent.trim();
-            }
-        }
-    });
+function extractDemoOrderNumber(row) {
+    const orderLink = row.querySelector('td:nth-child(2) a');
 
-    if (!order) {
-        console.warn('No demo order found. Retrying…');
-        return setTimeout(waitForDemoRow, 500);
+    if (orderLink) {
+        return orderLink.innerText.trim();
+    }
+
+    return null;
+}
+
+function handleDemoOrder(order) {
+    if (demoOrderCaptured) {
+        return;
     }
 
     chrome.runtime.sendMessage({ type: 'saveDemoOrder', order });
     chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: order });
     demoOrderCaptured = true;
     console.log('Demo order saved:', order);
+}
+
+function waitForDemoOrder(attempt = 0) {
+    console.log('🔍 Looking for Demo Shears table…');
+
+    const table = getDemoTable();
+    if (!table) {
+        if (attempt < 40) {
+            return setTimeout(() => waitForDemoOrder(attempt + 1), 250);
+        }
+        console.error('❌ Demo table not found after waiting.');
+        return;
+    }
+
+    console.log('✔ Demo table found — searching for open demo row…');
+
+    const row = findOpenDemoRow(table);
+    if (!row) {
+        if (attempt < 40) {
+            console.log('⏳ Demo row not ready yet. Retrying…');
+            return setTimeout(() => waitForDemoOrder(attempt + 1), 250);
+        }
+        console.error('❌ Demo OPEN row not found.');
+        return;
+    }
+
+    const orderNumber = extractDemoOrderNumber(row);
+    if (orderNumber) {
+        console.log('🎉 DEMO ORDER FOUND:', orderNumber);
+        handleDemoOrder(orderNumber);
+        return;
+    }
+
+    console.error('❌ Failed to extract demo order number from row.');
 }
 
 function requestStoredDemoOrder() {
@@ -193,7 +233,7 @@ function init() {
     const url = window.location.href;
 
     if (/\/AccountInfo\.cfm/i.test(url)) {
-        waitForDemoRow();
+        waitForDemoOrder();
     }
 
     if (location.href.includes('Shipping.cfm')) {
