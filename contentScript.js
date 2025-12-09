@@ -98,19 +98,45 @@ function startModalWorkflow(modal) {
 
     console.log('🔥 REAL Shipping modal detected — workflow begins now.');
 
-    const accountLink = modal.querySelector('#Cust0');
-    if (!accountLink) {
-        console.error('❌ Could not find AccountInfo link in modal.');
+    waitForCustomerLink(modal);
+}
+
+function waitForCustomerLink(modal) {
+    const target = modal.querySelector('#Cust0');
+
+    if (target && target.getAttribute('href')) {
+        handleCustomerLink(target);
         return;
     }
 
-    const relativeUrl = accountLink.getAttribute('href');
-    if (!relativeUrl) {
-        console.error('❌ AccountInfo link found but missing href attribute.');
+    const innerObserver = new MutationObserver(() => {
+        const link = modal.querySelector('#Cust0');
+        if (link && link.getAttribute('href')) {
+            console.log('✔ Customer link ready:', link.getAttribute('href'));
+            innerObserver.disconnect();
+            handleCustomerLink(link);
+        }
+    });
+
+    innerObserver.observe(modal, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['href'],
+    });
+
+    console.log('⏳ Waiting for AccountInfo href to be populated…');
+}
+
+function handleCustomerLink(link) {
+    const rawHref = link.getAttribute('href');
+    if (!rawHref) {
+        console.error('❌ STILL missing href — aborting.');
         return;
     }
 
-    const fullUrl = new URL(relativeUrl, window.location.origin).href;
+    const fullUrl = new URL(rawHref, window.location.origin).href;
+    console.log('➡ Opening AccountInfo:', fullUrl);
 
     chrome.runtime.sendMessage({
         type: 'openAccountInfo',
