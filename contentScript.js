@@ -31,6 +31,37 @@ async function clickAndWait(selector, waitForSelector, waitTime = 500) {
     return true;
 }
 
+async function waitForViewDemoLabel(orderId) {
+    console.log("⏳ Waiting for View Demo Label link for order:", orderId);
+
+    // Panel ID is always "O" + orderId
+    const panelId = `O${orderId}`;
+
+    for (let i = 0; i < 50; i++) {
+
+        const panel = document.getElementById(panelId);
+        if (panel) {
+
+            const labelLink = [...panel.querySelectorAll("a")].find(a =>
+                a.innerText.toLowerCase().includes("view") &&
+                a.innerText.toLowerCase().includes("demo")
+            );
+
+            if (labelLink) {
+                console.log("✔ View Demo Label link found — clicking…");
+                labelLink.click();
+                await sleep(500);
+                return true;
+            }
+        }
+
+        await sleep(200);
+    }
+
+    console.log("❌ View Demo Label link not found for order:", orderId);
+    return false;
+}
+
 async function waitForDemoTable() {
     console.log('🔍 Waiting for Demo Shears table...');
 
@@ -131,6 +162,8 @@ async function clickDemoPanel(demoOrder) {
         if (panelRow) {
             console.log('✔ Panel row found, clicking…');
             panelRow.click();
+            await sleep(1200); // allow AJAX panel to load
+            await waitForViewDemoLabel(demoOrder);
             await sleep(800);
             return true;
         }
