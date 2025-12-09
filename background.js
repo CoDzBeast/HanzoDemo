@@ -84,6 +84,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
     }
 
+    if (request.type === 'openAccountInfo' && request.url) {
+        chrome.tabs.create({ url: request.url, active: true });
+        return;
+    }
+
     if (request.type === 'getDemoOrder') {
         if (typeof sendResponse === 'function') {
             sendResponse({ order: demoOrderNumber });
