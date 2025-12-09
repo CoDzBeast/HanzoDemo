@@ -75,8 +75,8 @@ function openAccountTab(orderID, injectedFunction) {
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'storeDemoOrderNumber' && request.orderNumber) {
-        demoOrderNumber = request.orderNumber;
+    if (request.type === 'saveDemoOrder' && request.order) {
+        demoOrderNumber = request.order;
         chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: demoOrderNumber });
         if (typeof sendResponse === 'function') {
             sendResponse({ success: true });
@@ -84,9 +84,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
     }
 
-    if (request.action === 'getDemoOrderNumber') {
+    if (request.type === 'getDemoOrder') {
         if (typeof sendResponse === 'function') {
-            sendResponse({ orderNumber: demoOrderNumber });
+            sendResponse({ order: demoOrderNumber });
         }
         return;
     }
