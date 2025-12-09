@@ -24,51 +24,51 @@ function waitForElement(selector, { timeout = 20000, interval = 250 } = {}) {
     });
 }
 
-function extractDemoOrderNumber(row) {
-    if (!row) {
-        return null;
+let demoOrderCaptured = false;
+let workflowStarted = false;
+
+function waitForDemoTable() {
+    const table = document.querySelector('.table.table-striped');
+    if (table) {
+        console.log('Demo table found — extracting demo order.');
+        extractDemoOrder(table);
+        return;
     }
 
-    const orderAnchor = row.querySelector('a[href*="iorder="]');
-    if (!orderAnchor) {
-        return null;
-    }
-
-    const hrefMatch = orderAnchor.getAttribute('href').match(/iorder=(\d+)/i);
-    if (hrefMatch && hrefMatch[1]) {
-        return hrefMatch[1];
-    }
-
-    const textMatch = (orderAnchor.textContent || '').match(/(\d+)/);
-    return textMatch ? textMatch[1] : null;
+    console.log('Table not ready — retrying...');
+    setTimeout(waitForDemoTable, 500);
 }
 
-async function handleAccountInfoPage() {
-    try {
-        const table = await waitForElement('table.table.table-striped');
-        const rows = Array.from(table.querySelectorAll('tr'));
-
-        for (const row of rows) {
-            const cells = Array.from(row.querySelectorAll('td'));
-            const hasDemoMarker = cells.some((cell) => {
-                const align = (cell.getAttribute('align') || '').toLowerCase();
-                const text = (cell.textContent || '').trim();
-                return align === 'center' && text === 'O';
-            });
-
-            if (!hasDemoMarker) {
-                continue;
-            }
-
-            const demoOrderNumber = extractDemoOrderNumber(row);
-            if (demoOrderNumber) {
-                chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: demoOrderNumber });
-                chrome.runtime.sendMessage({ type: 'saveDemoOrder', order: demoOrderNumber });
-                return;
-            }
+function observeDemoTable() {
+    const observer = new MutationObserver(() => {
+        const table = document.querySelector('.table.table-striped');
+        if (table) {
+            console.log('Demo table detected via MutationObserver.');
+            extractDemoOrder(table);
         }
-    } catch (error) {
-        console.error(`[Demo Automation] Failed to capture demo order: ${error.message}`);
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function extractDemoOrder(table) {
+    if (demoOrderCaptured) {
+        return;
+    }
+
+    const rows = table.querySelectorAll('tr');
+    for (const row of rows) {
+        if (row.innerText.includes('O')) {
+            const link = row.querySelector("a[href*='iorder=']");
+            if (link) {
+                const order = link.textContent.trim();
+                console.log('Demo order retrieved:', order);
+                chrome.storage.local.set({ [DEMO_ORDER_STORAGE_KEY]: order });
+                chrome.runtime.sendMessage({ type: 'saveDemoOrder', order });
+                demoOrderCaptured = true;
+            }
+            break;
+        }
     }
 }
 
@@ -87,30 +87,34 @@ function requestStoredDemoOrder() {
     });
 }
 
-function startShippingWorkflow(modalElement) {
-    chrome.runtime.sendMessage({ type: "getDemoOrder" }, ({ order }) => {
+function startWorkflow(modal) {
+    if (workflowStarted) {
+        return;
+    }
+
+    chrome.runtime.sendMessage({ type: 'getDemoOrder' }, ({ order }) => {
         if (!order) {
-            console.warn("No demo order stored.");
+            console.warn('Demo order not found in storage.');
             return;
         }
 
-        openCorrectOrderPanel(order);
+        workflowStarted = true;
+        openDemoPanel(order);
     });
 }
 
-function openCorrectOrderPanel(orderNumber) {
+function openDemoPanel(orderNumber) {
     const panels = document.querySelectorAll('.rwOrdr');
-
     for (const panel of panels) {
         if (panel.textContent.includes(`#${orderNumber}`)) {
-            console.log('Opening panel for demo order:', orderNumber);
+            console.log('Opening demo panel:', orderNumber);
             panel.click();
             waitForDemoLabelButton();
             return;
         }
     }
 
-    console.warn('Demo order panel not found:', orderNumber);
+    console.warn('Panel for demo order NOT found:', orderNumber);
 }
 
 function waitForDemoLabelButton() {
@@ -118,49 +122,47 @@ function waitForDemoLabelButton() {
         const btn = document.querySelector('a[onclick="viewDemoLabel();"]');
         if (btn) {
             clearInterval(int);
-            console.log('Clicking View Demo Label button');
+            console.log('Clicking Demo Label button');
             btn.click();
         }
     }, 300);
 }
 
-function observeShippingModal() {
-    if (!location.href.includes('Shipping.cfm')) {
-        return;
+function detectModalImmediately() {
+    const modal = document.querySelector('.modal-content');
+    if (modal) {
+        console.log('Modal detected immediately — starting workflow');
+        startWorkflow(modal);
     }
+}
 
-    const existingModal = document.querySelector('.modal-content');
-    if (existingModal) {
-        startShippingWorkflow(existingModal);
-    }
-
-    const body = document.body;
-    if (!body) {
-        return;
-    }
-
+function observeForNewModals() {
     const observer = new MutationObserver((mutations) => {
         for (const m of mutations) {
             for (const node of m.addedNodes) {
-                if (node instanceof HTMLElement && node.matches('.modal-content')) {
-                    console.log('Modal detected — starting workflow');
-                    startShippingWorkflow(node);
+                if (node.nodeType === 1 && node.matches('.modal-content')) {
+                    console.log('Modal detected via observer — starting workflow');
+                    startWorkflow(node);
                 }
             }
         }
     });
 
-    observer.observe(body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function init() {
     const url = window.location.href;
 
     if (/\/AccountInfo\.cfm/i.test(url)) {
-        handleAccountInfoPage();
+        waitForDemoTable();
+        observeDemoTable();
     }
 
-    observeShippingModal();
+    if (location.href.includes('Shipping.cfm')) {
+        detectModalImmediately();
+        observeForNewModals();
+    }
 }
 
 init();
